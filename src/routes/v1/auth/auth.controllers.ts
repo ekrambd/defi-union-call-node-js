@@ -220,15 +220,153 @@ export const myinfo = async (request, reply) => {
   }
 };
 
+//search user old code
+// export const searchUsers = async (request, reply) => {
+//   try {
+//     const { myId } = request.params;
+//     console.log("myId", myId);
+//     const { search, page = 1, limit = 20 } = request.query;
+
+//     console.log("search", search);
+//     console.log("page", page);
+//     console.log("limit", limit);
+
+//     const currentUserId = Number(myId);
+//     if (isNaN(currentUserId)) {
+//       return reply.status(400).send({
+//         success: false,
+//         message: "Invalid user ID — must be a number",
+//       });
+//     }
+
+//     const pageNum = Math.max(1, parseInt(page) || 1);
+//     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+//     const skip = (pageNum - 1) * limitNum;
+
+//     const prisma = request.server.prisma;
+
+//     // Get list of blocked user IDs (both directions)
+//     const blockedUsers = await prisma.block.findMany({
+//       where: {
+//         OR: [
+//           { blockerId: currentUserId },
+//           { blockedId: currentUserId },
+//         ],
+//       },
+//     });
+
+//     const blockedUserIds = blockedUsers.map((block) => {
+//       if (block.blockerId === currentUserId) {
+//         return block.blockedId;
+//       }
+//       return block.blockerId;
+//     });
+
+//     let whereCondition: any = {
+//       id: { 
+//         not: currentUserId,
+//         notIn: blockedUserIds, // Exclude blocked users
+//       },
+//     };
+
+//     if (search && search.trim() !== "") {
+//       whereCondition.OR = [
+//         {
+//           name: {
+//             contains: search,
+//           },
+//         },
+//         {
+//           email: {
+//             contains: search,
+//           },
+//         },
+//       ];
+//     }
+
+//     const [users, totalCount] = await Promise.all([
+//       prisma.user.findMany({
+//         where: whereCondition,
+//         select: {
+//           id: true,
+//           name: true,
+//           email: true,
+//           avatar: true,
+//           address: true,
+//           createdAt: true,
+//         },
+//         orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+//         skip,
+//         take: limitNum,
+//       }),
+//       prisma.user.count({
+//         where: whereCondition,
+//       }),
+//     ]);
+
+//     const totalPages = Math.ceil(totalCount / limitNum);
+//     const hasNextPage = pageNum < totalPages;
+//     const hasPrevPage = pageNum > 1;
+
+//     if (!search) {
+//       return reply.status(200).send({
+//         success: true,
+//         message: "Users retrieved successfully",
+//         data: [],
+//         pagination: {
+//           currentPage: pageNum,
+//           totalPages,
+//           totalCount,
+//           hasNextPage,
+//           hasPrevPage,
+//           limit: limitNum,
+//         },
+//       });
+//     }
+
+//     //  res:-  "data": [
+//     //     {
+//     //         "id": 1469,
+//     //         "name": "A T M Waliullah",
+//     //         "email": "touchmethodbd@gmail.com",
+//     //         "avatar": add baseurl to "sys/stores/",
+//     //         "address": "",
+//     //         "createdAt": "2025-10-28T08:41:53.299Z"
+//     //     }
+//     // ],
+
+//     return reply.status(200).send({
+//       success: true,
+//       message: "Users retrieved successfully",
+//       data: users.map((user) => ({
+//         ...user,
+//         avatar: user.avatar ? `${FileService.avatarUrl(user.avatar)}` : null,
+//       })),
+//       pagination: {
+//         currentPage: pageNum,
+//         totalPages,
+//         totalCount,
+//         hasNextPage,
+//         hasPrevPage,
+//         limit: limitNum,
+//       },
+//     });
+//   } catch (error) {
+//     request.log.error(error);
+//     return reply.status(500).send({
+//       success: false,
+//       message: "Search failed",
+//       error: process.env.NODE_ENV === "development" ? error.message : undefined,
+//     });
+//   }
+// };
+
+//search user new code
+
 export const searchUsers = async (request, reply) => {
   try {
     const { myId } = request.params;
-    console.log("myId", myId);
     const { search, page = 1, limit = 20 } = request.query;
-
-    console.log("search", search);
-    console.log("page", page);
-    console.log("limit", limit);
 
     const currentUserId = Number(myId);
     if (isNaN(currentUserId)) {
@@ -244,7 +382,7 @@ export const searchUsers = async (request, reply) => {
 
     const prisma = request.server.prisma;
 
-    // Get list of blocked user IDs (both directions)
+    // blocked users
     const blockedUsers = await prisma.block.findMany({
       where: {
         OR: [
@@ -254,18 +392,18 @@ export const searchUsers = async (request, reply) => {
       },
     });
 
-    const blockedUserIds = blockedUsers.map((block) => {
-      if (block.blockerId === currentUserId) {
-        return block.blockedId;
-      }
-      return block.blockerId;
-    });
+    const blockedUserIds = blockedUsers.map((block) =>
+      block.blockerId === currentUserId ? block.blockedId : block.blockerId
+    );
 
     let whereCondition: any = {
-      id: { 
+      id: {
         not: currentUserId,
-        notIn: blockedUserIds, // Exclude blocked users
+        notIn: blockedUserIds,
       },
+
+      // ✅ ONLY USERS ROLE FILTER
+      role: "user",
     };
 
     if (search && search.trim() !== "") {
@@ -298,55 +436,27 @@ export const searchUsers = async (request, reply) => {
         skip,
         take: limitNum,
       }),
+
       prisma.user.count({
         where: whereCondition,
       }),
     ]);
 
     const totalPages = Math.ceil(totalCount / limitNum);
-    const hasNextPage = pageNum < totalPages;
-    const hasPrevPage = pageNum > 1;
-
-    if (!search) {
-      return reply.status(200).send({
-        success: true,
-        message: "Users retrieved successfully",
-        data: [],
-        pagination: {
-          currentPage: pageNum,
-          totalPages,
-          totalCount,
-          hasNextPage,
-          hasPrevPage,
-          limit: limitNum,
-        },
-      });
-    }
-
-    //  res:-  "data": [
-    //     {
-    //         "id": 1469,
-    //         "name": "A T M Waliullah",
-    //         "email": "touchmethodbd@gmail.com",
-    //         "avatar": add baseurl to "sys/stores/",
-    //         "address": "",
-    //         "createdAt": "2025-10-28T08:41:53.299Z"
-    //     }
-    // ],
 
     return reply.status(200).send({
       success: true,
       message: "Users retrieved successfully",
       data: users.map((user) => ({
         ...user,
-        avatar: user.avatar ? `${FileService.avatarUrl(user.avatar)}` : null,
+        avatar: user.avatar ? FileService.avatarUrl(user.avatar) : null,
       })),
       pagination: {
         currentPage: pageNum,
         totalPages,
         totalCount,
-        hasNextPage,
-        hasPrevPage,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
         limit: limitNum,
       },
     });
