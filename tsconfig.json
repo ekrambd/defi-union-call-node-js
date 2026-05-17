@@ -1,41 +1,36 @@
 {
+  // Most ts-node options can be specified here using their programmatic names.
   "ts-node": {
-    "swc": true
+    "swc": true,
+    // It is faster to skip typechecking.
+    // Remove if you want ts-node to do typechecking.
+    // "transpileOnly": true,
+    // "files": true,
+    // "compilerOptions": {
+    //   // compilerOptions specified here will override those declared below,
+    //   // but *only* in ts-node.  Useful if you want ts-node and tsc to use
+    //   // different options with a single tsconfig.json.
+    // }
   },
-
   "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+    /* Language and Environment */
     "target": "es2020",
-
-    "module": "commonjs",
-
-    "sourceMap": true,
-    "outDir": "build/",
-
-    "esModuleInterop": true,
-
-    "forceConsistentCasingInFileNames": true,
-
-    "skipLibCheck": true,
-
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
 
-    // 🔥 IMPORTANT FIX #1 (JSON import)
-    "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
+    /* Modules */
+    "module": "commonjs",
+    "sourceMap": true,
+    "outDir": "build/",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
 
-    // 🔥 IMPORTANT FIX #2 (types folder include হবে)
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    /* Completeness */
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types", "./types"]
   },
-
-  // 🔥 IMPORTANT FIX #3 (include types properly)
-  "include": [
-    "src/**/*.ts",
-    "src/types/**/*.d.ts"
-  ],
-
-  "exclude": [
-    "node_modules",
-    "build"
-  ]
+  // "include": ["**/*.ts", "generated/**/*"],
+   "include": ["**/*.ts"],
+  "exclude": ["typings/*", "node_modules", "scripts/**/*"]
 }
