@@ -1,6 +1,6 @@
 import fp from "fastify-plugin";
 import * as admin from "firebase-admin";
-import serviceAccount from "./config/union-trade-flutter-1689448d340f.json";
+import serviceAccount from "../config/union-trade-flutter-1689448d340f.json";
 
 function initFirebase(): boolean {
   if (admin.apps.length) return true;
