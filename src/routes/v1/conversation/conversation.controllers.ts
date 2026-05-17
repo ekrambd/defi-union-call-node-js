@@ -349,14 +349,272 @@ import { transformMessage } from "../../../utils/message.utils";
 //   }
 // };
 
+// old coversation lists code
+// export const getMyConversationsList = async (request, reply) => {
+//   try {
+//     const { myId } = request.params;
+//     const prisma = request.server.prisma;
+
+//     // Validate and parse user ID
+//     const currentUserId = parseInt(myId);
+//     if (isNaN(currentUserId)) {
+//       return reply.status(400).send({
+//         success: false,
+//         message: "Invalid user ID provided!",
+//       });
+//     }
+
+//     // Helper: Format user with avatar URL
+//     const formatUserWithAvatar = (user) => {
+//       if (!user) return null;
+//       return {
+//         ...user,
+//         avatar: user.avatar ? FileService.avatarUrl(user.avatar) : null,
+//       };
+//     };
+
+//     // Helper: Process and filter conversation members
+//     const processConversationMembers = (members, isGroup, currentUserId) => {
+//       const formattedMembers = members.map((member) => ({
+//         ...member,
+//         user: formatUserWithAvatar(member.user),
+//       }));
+
+//       if (!isGroup) {
+//         return formattedMembers.filter(
+//           (member) => member.userId !== currentUserId
+//         );
+//       }
+
+//       const [currentUserMembers, otherMembers] = formattedMembers.reduce(
+//         ([current, rest], member) =>
+//           member.userId === currentUserId
+//             ? [[...current, member], rest]
+//             : [current, [...rest, member]],
+//         [[], []]
+//       );
+
+//       return [...currentUserMembers, ...otherMembers].slice(0, 3);
+//     };
+
+//     // Helper: Get participant user IDs
+//     const getParticipantIds = (members: any[]): number[] => {
+//       return members
+//         .map((member) => member.userId)
+//         .filter((id): id is number => typeof id === "number");
+//     };
+
+//     // Helper: Batch count unread messages
+//     const batchCountUnreadMessages = async (
+//       prisma,
+//       conversationIds,
+//       currentUserId
+//     ) => {
+//       if (conversationIds.length === 0) return {};
+
+//       const unreadCounts = await prisma.message.groupBy({
+//         by: ["conversationId"],
+//         where: {
+//           conversationId: { in: conversationIds },
+//           userId: { not: currentUserId },
+//           isRead: false,
+//           NOT: { deletedForUsers: { array_contains: currentUserId } },
+//         },
+//         _count: { id: true },
+//       });
+
+//       const result: Record<string, number> = {};
+//       conversationIds.forEach((id) => (result[id] = 0));
+//       unreadCounts.forEach((item: any) => {
+//         result[item.conversationId] = item._count.id;
+//       });
+
+//       return result;
+//     };
+
+//     // Helper: Check if conversation is blocked
+//     const checkIfBlocked = async (prisma, conversation, currentUserId) => {
+//       if (conversation.isGroup) return false;
+
+//       const otherMember = conversation.members.find(
+//         (member) => member.userId !== currentUserId
+//       );
+//       if (!otherMember || !otherMember.userId) return false;
+
+//       const blockCheck = await prisma.block.findFirst({
+//         where: {
+//           OR: [
+//             { blockerId: currentUserId, blockedId: otherMember.userId },
+//             { blockerId: otherMember.userId, blockedId: currentUserId },
+//           ],
+//         },
+//       });
+
+//       return !!blockCheck;
+//     };
+
+//     // Helper: Get list of blocker IDs
+//     const getBlockByList = async (prisma, conversation, currentUserId) => {
+//       if (conversation.isGroup) return [];
+
+//       const otherMember = conversation.members.find(
+//         (member) => member.userId !== currentUserId
+//       );
+//       if (!otherMember || !otherMember.userId) return [];
+
+//       const blocks = await prisma.block.findMany({
+//         where: {
+//           OR: [
+//             { blockerId: currentUserId, blockedId: otherMember.userId },
+//             { blockerId: otherMember.userId, blockedId: currentUserId },
+//           ],
+//         },
+//         select: { blockerId: true },
+//       });
+
+//       return blocks.map((block) => block.blockerId);
+//     };
+
+//     // Helper: Transform a single conversation
+//     const transformConversation = async (
+//       conversation,
+//       currentUserId,
+//       unreadCount,
+//       prisma
+//     ) => {
+//       const participantIds = getParticipantIds(conversation.members);
+//       const isBlocked = await checkIfBlocked(prisma, conversation, currentUserId);
+//       const blockBy = await getBlockByList(prisma, conversation, currentUserId);
+
+//       const currentUserMember = conversation.members.find(
+//         (member) => member.userId === currentUserId
+//       );
+//       const isMute = currentUserMember?.isMute || false;
+
+//       return {
+//         ...conversation,
+
+//         // ✅ Add group permission fields here
+//         allowMemberAdd: conversation.allowMemberAdd,
+//         allowMemberMessage: conversation.allowMemberMessage,
+//         allowEditGroupInfo: conversation.allowEditGroupInfo,
+//         allowMemberShow: conversation.allowMemberShow,
+
+//         members: processConversationMembers(
+//           conversation.members,
+//           conversation.isGroup,
+//           currentUserId
+//         ),
+
+//         messages: conversation.messages.map((message: any) =>
+//           transformMessage(message, participantIds)
+//         ),
+
+//         avatar: conversation.avatar ? getImageUrl(conversation.avatar) : null,
+//         unreadCount,
+//         isBlocked,
+//         isMute,
+//         blockBy,
+//       };
+//     };
+
+//     // Pagination helper
+//     const parsePaginationParams = (query: any) => {
+//       const page = Math.max(parseInt(query.page) || 1, 1);
+//       const limit = Math.min(Math.max(parseInt(query.limit) || 10, 1), 100);
+//       const lastMessageLimit = Math.min(Math.max(parseInt(query.message) || 50, 1), 100);
+
+//       return { page, limit, lastMessageLimit, skip: (page - 1) * limit };
+//     };
+
+//     const parsePagination = parsePaginationParams(request.query);
+
+//     const whereClause = {
+//       members: {
+//         some: {
+//           userId: currentUserId,
+//           isDeleted: false,
+//           isArchived: false,
+//         },
+//       },
+//     };
+
+//     // Fetch total count and conversations
+//     const [totalItems, conversations] = await Promise.all([
+//       prisma.conversation.count({ where: whereClause }),
+//       prisma.conversation.findMany({
+//         where: whereClause,
+//         skip: parsePagination.skip,
+//         take: parsePagination.limit,
+//         include: {
+//           members: {
+//             where: { isDeleted: false },
+//             include: {
+//               user: { select: { id: true, name: true, email: true, avatar: true } },
+//             },
+//           },
+//           messages: {
+//             where: { NOT: { deletedForUsers: { array_contains: currentUserId } } },
+//             orderBy: { createdAt: "desc" },
+//             take: parsePagination.lastMessageLimit,
+//             include: { user: { select: { id: true, name: true, email: true, avatar: true } }, MessageFile: true },
+//           },
+//         },
+//         orderBy: { updatedAt: "desc" },
+//       }),
+//     ]);
+
+//     const conversationIds = conversations.map((conv) => conv.id);
+//     const unreadCountsMap = await batchCountUnreadMessages(prisma, conversationIds, currentUserId);
+
+//     const transformedConversations = await Promise.all(
+//       conversations.map(async (conversation) =>
+//         transformConversation(
+//           conversation,
+//           currentUserId,
+//           unreadCountsMap[conversation.id] || 0,
+//           prisma
+//         )
+//       )
+//     );
+
+//     const totalPages = Math.ceil(totalItems / parsePagination.limit);
+
+//     return reply.send({
+//       success: true,
+//       data: transformedConversations,
+//       pagination: {
+//         totalItems,
+//         totalPages,
+//         currentPage: parsePagination.page,
+//         itemsPerPage: parsePagination.limit,
+//         hasNextPage: parsePagination.page < totalPages,
+//         hasPrevPage: parsePagination.page > 1,
+//       },
+//     });
+
+//   } catch (error) {
+//     request.log.error(error, "Error getting conversations");
+//     return reply.status(500).send({
+//       success: false,
+//       message: "Failed to get conversations",
+//       error: process.env.NODE_ENV === "development" ? error.message : undefined,
+//     });
+//   }
+// };
+
+
+//new conversation lists code
 
 export const getMyConversationsList = async (request, reply) => {
   try {
     const { myId } = request.params;
+    const { role } = request.query; // 👉 optional role filter
+
     const prisma = request.server.prisma;
 
-    // Validate and parse user ID
     const currentUserId = parseInt(myId);
+
     if (isNaN(currentUserId)) {
       return reply.status(400).send({
         success: false,
@@ -364,7 +622,12 @@ export const getMyConversationsList = async (request, reply) => {
       });
     }
 
-    // Helper: Format user with avatar URL
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
     const formatUserWithAvatar = (user) => {
       if (!user) return null;
       return {
@@ -373,161 +636,50 @@ export const getMyConversationsList = async (request, reply) => {
       };
     };
 
-    // Helper: Process and filter conversation members
-    const processConversationMembers = (members, isGroup, currentUserId) => {
-      const formattedMembers = members.map((member) => ({
-        ...member,
-        user: formatUserWithAvatar(member.user),
-      }));
-
-      if (!isGroup) {
-        return formattedMembers.filter(
-          (member) => member.userId !== currentUserId
-        );
-      }
-
-      const [currentUserMembers, otherMembers] = formattedMembers.reduce(
-        ([current, rest], member) =>
-          member.userId === currentUserId
-            ? [[...current, member], rest]
-            : [current, [...rest, member]],
-        [[], []]
-      );
-
-      return [...currentUserMembers, ...otherMembers].slice(0, 3);
-    };
-
-    // Helper: Get participant user IDs
-    const getParticipantIds = (members: any[]): number[] => {
+    const getParticipantIds = (members) => {
       return members
-        .map((member) => member.userId)
-        .filter((id): id is number => typeof id === "number");
+        .map((m) => m.userId)
+        .filter((id) => typeof id === "number");
     };
 
-    // Helper: Batch count unread messages
-    const batchCountUnreadMessages = async (
-      prisma,
-      conversationIds,
-      currentUserId
-    ) => {
-      if (conversationIds.length === 0) return {};
-
-      const unreadCounts = await prisma.message.groupBy({
-        by: ["conversationId"],
-        where: {
-          conversationId: { in: conversationIds },
-          userId: { not: currentUserId },
-          isRead: false,
-          NOT: { deletedForUsers: { array_contains: currentUserId } },
-        },
-        _count: { id: true },
-      });
-
-      const result: Record<string, number> = {};
-      conversationIds.forEach((id) => (result[id] = 0));
-      unreadCounts.forEach((item: any) => {
-        result[item.conversationId] = item._count.id;
-      });
-
-      return result;
-    };
-
-    // Helper: Check if conversation is blocked
-    const checkIfBlocked = async (prisma, conversation, currentUserId) => {
-      if (conversation.isGroup) return false;
-
-      const otherMember = conversation.members.find(
-        (member) => member.userId !== currentUserId
+    const parsePaginationParams = (query) => {
+      const page = Math.max(parseInt(query.page) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(query.limit) || 10, 1), 100);
+      const lastMessageLimit = Math.min(
+        Math.max(parseInt(query.message) || 50, 1),
+        100
       );
-      if (!otherMember || !otherMember.userId) return false;
-
-      const blockCheck = await prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: currentUserId, blockedId: otherMember.userId },
-            { blockerId: otherMember.userId, blockedId: currentUserId },
-          ],
-        },
-      });
-
-      return !!blockCheck;
-    };
-
-    // Helper: Get list of blocker IDs
-    const getBlockByList = async (prisma, conversation, currentUserId) => {
-      if (conversation.isGroup) return [];
-
-      const otherMember = conversation.members.find(
-        (member) => member.userId !== currentUserId
-      );
-      if (!otherMember || !otherMember.userId) return [];
-
-      const blocks = await prisma.block.findMany({
-        where: {
-          OR: [
-            { blockerId: currentUserId, blockedId: otherMember.userId },
-            { blockerId: otherMember.userId, blockedId: currentUserId },
-          ],
-        },
-        select: { blockerId: true },
-      });
-
-      return blocks.map((block) => block.blockerId);
-    };
-
-    // Helper: Transform a single conversation
-    const transformConversation = async (
-      conversation,
-      currentUserId,
-      unreadCount,
-      prisma
-    ) => {
-      const participantIds = getParticipantIds(conversation.members);
-      const isBlocked = await checkIfBlocked(prisma, conversation, currentUserId);
-      const blockBy = await getBlockByList(prisma, conversation, currentUserId);
-
-      const currentUserMember = conversation.members.find(
-        (member) => member.userId === currentUserId
-      );
-      const isMute = currentUserMember?.isMute || false;
 
       return {
-        ...conversation,
-
-        // ✅ Add group permission fields here
-        allowMemberAdd: conversation.allowMemberAdd,
-        allowMemberMessage: conversation.allowMemberMessage,
-        allowEditGroupInfo: conversation.allowEditGroupInfo,
-        allowMemberShow: conversation.allowMemberShow,
-
-        members: processConversationMembers(
-          conversation.members,
-          conversation.isGroup,
-          currentUserId
-        ),
-
-        messages: conversation.messages.map((message: any) =>
-          transformMessage(message, participantIds)
-        ),
-
-        avatar: conversation.avatar ? getImageUrl(conversation.avatar) : null,
-        unreadCount,
-        isBlocked,
-        isMute,
-        blockBy,
+        page,
+        limit,
+        lastMessageLimit,
+        skip: (page - 1) * limit,
       };
     };
 
-    // Pagination helper
-    const parsePaginationParams = (query: any) => {
-      const page = Math.max(parseInt(query.page) || 1, 1);
-      const limit = Math.min(Math.max(parseInt(query.limit) || 10, 1), 100);
-      const lastMessageLimit = Math.min(Math.max(parseInt(query.message) || 50, 1), 100);
+    const pagination = parsePaginationParams(request.query);
 
-      return { page, limit, lastMessageLimit, skip: (page - 1) * limit };
-    };
+    /*
+    |--------------------------------------------------------------------------
+    | Dynamic Role Filter (MAIN LOGIC)
+    |--------------------------------------------------------------------------
+    */
 
-    const parsePagination = parsePaginationParams(request.query);
+    const roleFilter =
+      role === "user"
+        ? {
+            user: {
+              role: "user",
+            },
+          }
+        : {};
+
+    /*
+    |--------------------------------------------------------------------------
+    | Where Clause
+    |--------------------------------------------------------------------------
+    */
 
     const whereClause = {
       members: {
@@ -535,73 +687,164 @@ export const getMyConversationsList = async (request, reply) => {
           userId: currentUserId,
           isDeleted: false,
           isArchived: false,
+          ...roleFilter,
         },
       },
     };
 
-    // Fetch total count and conversations
+    /*
+    |--------------------------------------------------------------------------
+    | Fetch Conversations
+    |--------------------------------------------------------------------------
+    */
+
     const [totalItems, conversations] = await Promise.all([
       prisma.conversation.count({ where: whereClause }),
+
       prisma.conversation.findMany({
         where: whereClause,
-        skip: parsePagination.skip,
-        take: parsePagination.limit,
+        skip: pagination.skip,
+        take: pagination.limit,
+
         include: {
           members: {
-            where: { isDeleted: false },
+            where: {
+              isDeleted: false,
+              ...roleFilter,
+            },
             include: {
-              user: { select: { id: true, name: true, email: true, avatar: true } },
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                  role: true,
+                },
+              },
             },
           },
+
           messages: {
-            where: { NOT: { deletedForUsers: { array_contains: currentUserId } } },
+            where: {
+              NOT: {
+                deletedForUsers: {
+                  array_contains: currentUserId,
+                },
+              },
+            },
             orderBy: { createdAt: "desc" },
-            take: parsePagination.lastMessageLimit,
-            include: { user: { select: { id: true, name: true, email: true, avatar: true } }, MessageFile: true },
+            take: pagination.lastMessageLimit,
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                  role: true,
+                },
+              },
+              MessageFile: true,
+            },
           },
         },
+
         orderBy: { updatedAt: "desc" },
       }),
     ]);
 
-    const conversationIds = conversations.map((conv) => conv.id);
-    const unreadCountsMap = await batchCountUnreadMessages(prisma, conversationIds, currentUserId);
+    /*
+    |--------------------------------------------------------------------------
+    | Unread Messages Batch
+    |--------------------------------------------------------------------------
+    */
 
-    const transformedConversations = await Promise.all(
-      conversations.map(async (conversation) =>
-        transformConversation(
-          conversation,
-          currentUserId,
-          unreadCountsMap[conversation.id] || 0,
-          prisma
-        )
-      )
+    const conversationIds = conversations.map((c) => c.id);
+
+    const unreadCounts = await prisma.message.groupBy({
+      by: ["conversationId"],
+      where: {
+        conversationId: { in: conversationIds },
+        userId: { not: currentUserId },
+        isRead: false,
+        NOT: {
+          deletedForUsers: {
+            array_contains: currentUserId,
+          },
+        },
+      },
+      _count: { id: true },
+    });
+
+    const unreadMap = {};
+    conversationIds.forEach((id) => (unreadMap[id] = 0));
+
+    unreadCounts.forEach((item) => {
+      unreadMap[item.conversationId] = item._count.id;
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Transform Data
+    |--------------------------------------------------------------------------
+    */
+
+    const result = await Promise.all(
+      conversations.map(async (conv) => {
+        const participantIds = getParticipantIds(conv.members);
+
+        return {
+          ...conv,
+
+          members: conv.members.map((m) => ({
+            ...m,
+            user: formatUserWithAvatar(m.user),
+          })),
+
+          messages: conv.messages.map((msg) =>
+            transformMessage(msg, participantIds)
+          ),
+
+          unreadCount: unreadMap[conv.id] || 0,
+
+          avatar: conv.avatar ? getImageUrl(conv.avatar) : null,
+        };
+      })
     );
 
-    const totalPages = Math.ceil(totalItems / parsePagination.limit);
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
+
+    const totalPages = Math.ceil(totalItems / pagination.limit);
 
     return reply.send({
       success: true,
-      data: transformedConversations,
+      data: result,
       pagination: {
         totalItems,
         totalPages,
-        currentPage: parsePagination.page,
-        itemsPerPage: parsePagination.limit,
-        hasNextPage: parsePagination.page < totalPages,
-        hasPrevPage: parsePagination.page > 1,
+        currentPage: pagination.page,
+        itemsPerPage: pagination.limit,
+        hasNextPage: pagination.page < totalPages,
+        hasPrevPage: pagination.page > 1,
       },
     });
-
   } catch (error) {
-    request.log.error(error, "Error getting conversations");
+    request.log.error(error);
+
     return reply.status(500).send({
       success: false,
       message: "Failed to get conversations",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
+
 
 export const getSingleConversation = async (request, reply) => {
   try {
