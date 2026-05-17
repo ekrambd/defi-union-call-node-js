@@ -369,6 +369,7 @@ export const searchUsers = async (request, reply) => {
     const { search, page = 1, limit = 20 } = request.query;
 
     const currentUserId = Number(myId);
+
     if (isNaN(currentUserId)) {
       return reply.status(400).send({
         success: false,
@@ -382,7 +383,7 @@ export const searchUsers = async (request, reply) => {
 
     const prisma = request.server.prisma;
 
-    // blocked users
+    // blocked users list
     const blockedUsers = await prisma.block.findMany({
       where: {
         OR: [
@@ -392,34 +393,46 @@ export const searchUsers = async (request, reply) => {
       },
     });
 
-    const blockedUserIds = blockedUsers.map((block) =>
-      block.blockerId === currentUserId ? block.blockedId : block.blockerId
+    const blockedUserIds = blockedUsers.map((b) =>
+      b.blockerId === currentUserId ? b.blockedId : b.blockerId
     );
 
-    let whereCondition: any = {
-      id: {
-        not: currentUserId,
-        notIn: blockedUserIds,
-      },
+    const whereCondition: any = {
+      AND: [
+        // exclude self + blocked users
+        {
+          id: {
+            not: currentUserId,
+            notIn: blockedUserIds,
+          },
+        },
 
-      // ✅ ONLY USERS ROLE FILTER
-      role: "user",
+        // ONLY role = user
+        {
+          role: "user",
+        },
+
+        // search condition (only if search exists)
+        ...(search && search.trim() !== ""
+          ? [
+              {
+                OR: [
+                  {
+                    name: {
+                      contains: search,
+                    },
+                  },
+                  {
+                    email: {
+                      contains: search,
+                    },
+                  },
+                ],
+              },
+            ]
+          : []),
+      ],
     };
-
-    if (search && search.trim() !== "") {
-      whereCondition.OR = [
-        {
-          name: {
-            contains: search,
-          },
-        },
-        {
-          email: {
-            contains: search,
-          },
-        },
-      ];
-    }
 
     const [users, totalCount] = await Promise.all([
       prisma.user.findMany({
@@ -432,7 +445,10 @@ export const searchUsers = async (request, reply) => {
           address: true,
           createdAt: true,
         },
-        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        orderBy: [
+          { name: "asc" },
+          { createdAt: "desc" },
+        ],
         skip,
         take: limitNum,
       }),
@@ -449,7 +465,9 @@ export const searchUsers = async (request, reply) => {
       message: "Users retrieved successfully",
       data: users.map((user) => ({
         ...user,
-        avatar: user.avatar ? FileService.avatarUrl(user.avatar) : null,
+        avatar: user.avatar
+          ? FileService.avatarUrl(user.avatar)
+          : null,
       })),
       pagination: {
         currentPage: pageNum,
@@ -465,7 +483,10 @@ export const searchUsers = async (request, reply) => {
     return reply.status(500).send({
       success: false,
       message: "Search failed",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error:
+        process.env.NODE_ENV === "development"
+          ? "something went wrong"
+          : undefined,
     });
   }
 };
