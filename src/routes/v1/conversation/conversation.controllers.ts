@@ -609,8 +609,6 @@ import { transformMessage } from "../../../utils/message.utils";
 export const getMyConversationsList = async (request, reply) => {
   try {
     const { myId } = request.params;
-    const { role } = request.query;
-
     const prisma = request.server.prisma;
 
     const currentUserId = parseInt(myId);
@@ -624,80 +622,54 @@ export const getMyConversationsList = async (request, reply) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Helpers
+    | Pagination
     |--------------------------------------------------------------------------
     */
 
-    const formatUserWithAvatar = (user) => {
-      if (!user) return null;
-      return {
-        ...user,
-        avatar: user.avatar ? FileService.avatarUrl(user.avatar) : null,
-      };
-    };
-
-    const getParticipantIds = (members) => {
-      return members
-        .map((m) => m.userId)
-        .filter((id) => typeof id === "number");
-    };
-
-    const parsePaginationParams = (query) => {
-      const page = Math.max(parseInt(query.page) || 1, 1);
-      const limit = Math.min(Math.max(parseInt(query.limit) || 10, 1), 100);
-
-      const lastMessageLimit = Math.min(
-        Math.max(parseInt(query.message) || 50, 1),
-        100
-      );
-
-      return {
-        page,
-        limit,
-        lastMessageLimit,
-        skip: (page - 1) * limit,
-      };
-    };
-
-    const pagination = parsePaginationParams(request.query);
+    const page = Math.max(parseInt(request.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(request.query.limit) || 10, 1), 100);
+    const skip = (page - 1) * limit;
+    const lastMessageLimit = Math.min(
+      Math.max(parseInt(request.query.message) || 50, 1),
+      100
+    );
 
     /*
     |--------------------------------------------------------------------------
-    | MAIN FIX: role filter ONLY for include (NOT where)
+    | MAIN FILTER LOGIC
     |--------------------------------------------------------------------------
-    */
-
-    const memberIncludeWhere =
-      role === "user"
-        ? {
-            isDeleted: false,
-            user: {
-              role: "user",
-            },
-          }
-        : {
-            isDeleted: false,
-          };
-
-    /*
-    |--------------------------------------------------------------------------
-    | Where Clause (IMPORTANT: NO ROLE FILTER HERE)
+    | 1. Current user must be in conversation
+    | 2. ALL members must have role = "user"
     |--------------------------------------------------------------------------
     */
 
     const whereClause = {
-      members: {
-        some: {
-          userId: currentUserId,
-          isDeleted: false,
-          isArchived: false,
+      AND: [
+        {
+          members: {
+            some: {
+              userId: currentUserId,
+              isDeleted: false,
+              isArchived: false,
+            },
+          },
         },
-      },
+        {
+          members: {
+            every: {
+              isDeleted: false,
+              user: {
+                role: "user",
+              },
+            },
+          },
+        },
+      ],
     };
 
     /*
     |--------------------------------------------------------------------------
-    | Fetch Conversations
+    | FETCH DATA
     |--------------------------------------------------------------------------
     */
 
@@ -706,12 +678,14 @@ export const getMyConversationsList = async (request, reply) => {
 
       prisma.conversation.findMany({
         where: whereClause,
-        skip: pagination.skip,
-        take: pagination.limit,
+        skip,
+        take: limit,
 
         include: {
           members: {
-            where: memberIncludeWhere,
+            where: {
+              isDeleted: false,
+            },
             include: {
               user: {
                 select: {
@@ -734,7 +708,7 @@ export const getMyConversationsList = async (request, reply) => {
               },
             },
             orderBy: { createdAt: "desc" },
-            take: pagination.lastMessageLimit,
+            take: lastMessageLimit,
             include: {
               user: {
                 select: {
@@ -756,7 +730,7 @@ export const getMyConversationsList = async (request, reply) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Unread Messages
+    | UNREAD COUNT
     |--------------------------------------------------------------------------
     */
 
@@ -786,40 +760,47 @@ export const getMyConversationsList = async (request, reply) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Transform
+    | RESPONSE TRANSFORM
     |--------------------------------------------------------------------------
     */
 
-    const result = await Promise.all(
-      conversations.map(async (conv) => {
-        const participantIds = getParticipantIds(conv.members);
+    const result = conversations.map((conv) => {
+      const participantIds = conv.members
+        .map((m) => m.userId)
+        .filter((id) => typeof id === "number");
 
-        return {
-          ...conv,
+      return {
+        ...conv,
 
-          members: conv.members.map((m) => ({
-            ...m,
-            user: formatUserWithAvatar(m.user),
-          })),
+        unreadCount: unreadMap[conv.id] || 0,
 
-          messages: conv.messages.map((msg) =>
-            transformMessage(msg, participantIds)
-          ),
+        members: conv.members.map((m) => ({
+          ...m,
+          user: m.user
+            ? {
+                ...m.user,
+                avatar: m.user.avatar
+                  ? FileService.avatarUrl(m.user.avatar)
+                  : null,
+              }
+            : null,
+        })),
 
-          unreadCount: unreadMap[conv.id] || 0,
+        messages: conv.messages.map((msg) =>
+          transformMessage(msg, participantIds)
+        ),
 
-          avatar: conv.avatar ? getImageUrl(conv.avatar) : null,
-        };
-      })
-    );
+        avatar: conv.avatar ? getImageUrl(conv.avatar) : null,
+      };
+    });
 
     /*
     |--------------------------------------------------------------------------
-    | Response
+    | RESPONSE
     |--------------------------------------------------------------------------
     */
 
-    const totalPages = Math.ceil(totalItems / pagination.limit);
+    const totalPages = Math.ceil(totalItems / limit);
 
     return reply.send({
       success: true,
@@ -827,10 +808,10 @@ export const getMyConversationsList = async (request, reply) => {
       pagination: {
         totalItems,
         totalPages,
-        currentPage: pagination.page,
-        itemsPerPage: pagination.limit,
-        hasNextPage: pagination.page < totalPages,
-        hasPrevPage: pagination.page > 1,
+        currentPage: page,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
       },
     });
   } catch (error) {
@@ -839,8 +820,7 @@ export const getMyConversationsList = async (request, reply) => {
     return reply.status(500).send({
       success: false,
       message: "Failed to get conversations",
-      error:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
