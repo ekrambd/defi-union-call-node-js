@@ -383,7 +383,6 @@ export const searchUsers = async (request, reply) => {
 
     const prisma = request.server.prisma;
 
-    // blocked users list
     const blockedUsers = await prisma.block.findMany({
       where: {
         OR: [
@@ -399,7 +398,7 @@ export const searchUsers = async (request, reply) => {
 
     const whereCondition: any = {
       AND: [
-        // exclude self + blocked users
+        // ❌ exclude self + blocked
         {
           id: {
             not: currentUserId,
@@ -407,31 +406,31 @@ export const searchUsers = async (request, reply) => {
           },
         },
 
-        // ONLY role = user
+        // ✅ STRICT ROLE FILTER (ONLY USER)
         {
-          role: "user",
+          role: {
+            equals: "user",
+          },
         },
 
-        // search condition (only if search exists)
-        ...(search && search.trim() !== ""
-          ? [
-              {
-                OR: [
-                  {
-                    name: {
-                      contains: search,
-                    },
+        // ✅ SEARCH (only if exists)
+        search && search.trim() !== ""
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: search,
                   },
-                  {
-                    email: {
-                      contains: search,
-                    },
+                },
+                {
+                  email: {
+                    contains: search,
                   },
-                ],
-              },
-            ]
-          : []),
-      ],
+                },
+              ],
+            }
+          : undefined,
+      ].filter(Boolean), // remove undefined safely
     };
 
     const [users, totalCount] = await Promise.all([
@@ -444,6 +443,7 @@ export const searchUsers = async (request, reply) => {
           avatar: true,
           address: true,
           createdAt: true,
+          role: true, // (debugging purpose)
         },
         orderBy: [
           { name: "asc" },
@@ -458,24 +458,18 @@ export const searchUsers = async (request, reply) => {
       }),
     ]);
 
-    const totalPages = Math.ceil(totalCount / limitNum);
-
-    return reply.status(200).send({
+    return reply.send({
       success: true,
-      message: "Users retrieved successfully",
-      data: users.map((user) => ({
-        ...user,
-        avatar: user.avatar
-          ? FileService.avatarUrl(user.avatar)
-          : null,
+      data: users.map((u) => ({
+        ...u,
+        avatar: u.avatar ? FileService.avatarUrl(u.avatar) : null,
       })),
       pagination: {
         currentPage: pageNum,
-        totalPages,
+        totalPages: Math.ceil(totalCount / limitNum),
         totalCount,
-        hasNextPage: pageNum < totalPages,
+        hasNextPage: pageNum < Math.ceil(totalCount / limitNum),
         hasPrevPage: pageNum > 1,
-        limit: limitNum,
       },
     });
   } catch (error) {
@@ -483,10 +477,6 @@ export const searchUsers = async (request, reply) => {
     return reply.status(500).send({
       success: false,
       message: "Search failed",
-      error:
-        process.env.NODE_ENV === "development"
-          ? "something went wrong"
-          : undefined,
     });
   }
 };
